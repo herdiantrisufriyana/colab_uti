@@ -1,0 +1,391 @@
+---
+title: "Predicting urinary tract infection (UTI)"
+output: html_document
+date: "2022-11-26"
+---
+
+# Programming environment
+
+```{r Determine settings, include=FALSE}
+seed=2022-11-26
+bioc_version='3.16'
+```
+
+```{r Determine computing requirements, include=FALSE}
+# 1 == file size >=25MB
+# 2 == considerably-long computation
+# 3 == RAM >=8 GB
+# 4 == require GPU
+comp_req=c(1,2,3,4)
+```
+
+
+```{r Load packages, include=FALSE}
+library(tidyverse)
+library(pbapply)
+library(haven)
+library(parallel)
+library(doParallel)
+```
+
+```{r Set theme, include=FALSE}
+dslabs::ds_theme_set()
+```
+
+# Load raw data
+
+```{r Obtain raw data file information, include=FALSE}
+raw_data_info=
+  list.files('raw_data',full.names=T) %>%
+  data.frame(filename=.) %>%
+  mutate(
+    filesize=file.size(filename)
+    ,code=
+      filename %>%
+      str_sub(
+        start=
+          sapply(.,\(x){
+            str_locate_all(x,'/v_')[[1]][1,1]+3}
+          )
+        ,end=
+          sapply(.,\(x){
+            str_locate_all(x,'\\.sas7bdat')[[1]][1,1]-1
+          })
+      )
+    ,type=str_sub(code,str_length(code),str_length(code))
+    ,type=ifelse(type%in%c('s','t','w'),type,'')
+    ,code=str_remove_all(code,'_s$|_t$|_w$')
+  ) %>%
+  group_by(code) %>%
+  mutate(
+    n=n()
+    ,codesize=sum(filesize)
+  ) %>%
+  ungroup() %>%
+  arrange(desc(n),codesize,code,type)
+```
+
+```{r Scrape raw data description from SAS-report PDF, include=FALSE}
+raw_data_desc_sas=
+  suppressWarnings(suppressMessages(
+    read_csv('data/++«+ñjñp_A202206008.csv')
+  )) %>%
+  slice(7:nrow(.)) %>%
+  filter(str_detect(pdf,'[:alpha:]')) %>%
+  filter(
+    !pdf%in%c(
+      'A202206008: 2008-01-01 ~ 2020-12-31 ??????????'
+      ,'? 59.09 GB'
+      ,'???? (GB)'
+      ,'TOTAL'
+    )
+  ) %>%
+  mutate(pdf=str_to_lower(pdf)) %>%
+  rename(code=pdf) %>%
+  mutate(code=factor(code,unique(code)))
+```
+
+```{r Read raw data in SAS, include=FALSE}
+if(all(c(1,2,3)%in%comp_req)){ # 50m 21s
+  cl=detectCores()-2
+  start=T; source('R/parallel_computing-codes.R')
+  
+  raw_data=
+    raw_data_info %>%
+    pull(filename) %>%
+    pblapply(
+      cl=cl
+      ,read_sas=read_sas
+      ,\(x,read_sas){
+        if(str_detect(x,'v_mtrl_basic_s')){
+          x %>%
+            read_sas(encoding='UTF-8')
+        }else{
+          x %>%
+            read_sas()
+        }
+    }) %>%
+    `names<-`(
+      raw_data_info %>%
+        pull(filename) %>%
+        str_remove_all('raw_data/|\\.sas7bdat')
+    )
+  
+  saveRDS(raw_data,'data/raw_data.rds')
+  start=F; source('R/parallel_computing-codes.R')
+}else{
+  raw_data=readRDS('data/raw_data.rds')
+}
+```
+
+```{r Sanity check of data file completeness, eval=FALSE, include=FALSE}
+# The numbers of rows are the same,
+# while the numbers of fields are different.
+# But, manual check by SAS EG shows the same numbers of fields.
+raw_data %>%
+  lapply(dim) %>%
+  lapply(t) %>%
+  lapply(data.frame) %>%
+  lapply(`colnames<-`,c('nrow','ncol')) %>%
+  lapply(X=names(.),Y=.,\(X,Y)mutate(Y[[X]],code=X)) %>%
+  do.call(rbind,.) %>%
+  mutate(
+    type=str_sub(code,str_length(code),str_length(code))
+    ,type=ifelse(type%in%c('s','t','w'),type,'z')
+    ,code=str_remove_all(code,'^v_|_s$|_t$|_w$')
+  ) %>%
+  left_join(
+    raw_data_info %>%
+      select(code,type,filesize)
+    ,by=c('code','type')
+  ) %>%
+  mutate(filesize=round(filesize/10^9,2)) %>%
+  rbind(
+    group_by(.,ncol,code) %>%
+      summarize(
+        type='all'
+        ,nrow=sum(nrow)
+        ,filesize=sum(filesize)
+        ,.groups='drop'
+      )
+  ) %>%
+  pivot_wider(
+    names_from='type'
+    ,values_from=c('nrow','filesize')
+    ,values_fill=0
+  ) %>%
+  mutate(code=factor(code,levels(raw_data_desc_sas$code))) %>%
+  right_join(
+    raw_data_desc_sas
+    ,by='code'
+  ) %>%
+  mutate_all(\(x){
+    if(is.factor(x)){
+      x
+    }else{
+      ifelse(is.na(x),0,x)
+    }
+  }) %>%
+  arrange(code)
+```
+
+```{r Lists of columns of interests and their connections, include=FALSE}
+source('R/cols_int-variable.R')
+source('R/cols_int_conn-variable.R')
+```
+
+```{r Select columns of interests, include=FALSE}
+if(all(c(1)%in%comp_req)){
+  raw_data2=
+    raw_data %>%
+    names() %>%
+    `names<-`(.,.) %>%
+    lapply(\(x){
+      y=x %>%
+        str_remove_all('^v_|_s$|_t$|_w$') %>%
+        str_to_upper()
+      
+      if(y%in%cols_int$dataset){
+        z=cols_int  %>%
+          filter(dataset%in%y) %>%
+          pull(select) %>%
+          str_split('\\|') %>%
+          .[[1]]
+        
+        raw_data[[x]] %>%
+          select_at(
+            colnames(.) %>%
+              .[.%in%z]
+          )
+      }else{
+        NULL
+      }
+    }) %>%
+    .[!sapply(.,is.null)]
+  
+  saveRDS(raw_data2,'data/raw_data2.rds')
+}else{
+  raw_data2=readRDS('data/raw_data2.rds')
+}
+```
+
+```{r Create a table to convert _NO to integer identifier}
+id_no=
+  raw_data2 %>%
+  .[sapply(.,\(x)colnames(x) %>% str_detect('_NO$') %>% any())] %>%
+  lapply(\(x)x %>% select_at(colnames(.) %>% .[str_detect(.,'_NO$')])) %>%
+  lapply(mutate_all,as.character) %>%
+  lapply(gather) %>%
+  lapply(\(x)filter(x,!duplicated(x))) %>%
+  do.call(rbind,.) %>%
+  `rownames<-`(NULL) %>%
+  filter(!duplicated(.)) %>%
+  arrange(key,value) %>%
+  group_by(key) %>%
+  mutate(id_subject=seq(n()))
+```
+
+```{r}
+raw_data2$v_chr_basic_s
+raw_data2$v_opd_basic_s
+raw_data2$v_ipd_basic_s
+raw_data2$v_opd_med_s
+raw_data2$v_bio_inf_s
+raw_data2$v_opd_exper_s
+raw_data2$v_labresult_s
+raw_data2$v_chr_icd_s
+raw_data2$v_ud_order_s
+```
+
+```{r An empty list for outpatient and inpatient datasets, include=FALSE}
+raw_data3=list()
+```
+
+```{r Join outpatient datasets for each s/t/w, include=FALSE}
+raw_data3$OPD=list()
+
+for(x in c('_s$','_t$','_w$')){
+  cat(x)
+  y=raw_data2 %>%
+    .[str_detect(names(.),x)] %>%
+    `names<-`(str_remove_all(names(.),'^v_|_s$|_t$|_w$')) %>%
+    `names<-`(str_to_upper(names(.)))
+  
+  z=cols_int_conn[c(3:6,13:14),] %>%
+    filter(left%in%names(y) & right%in%names(y))
+  
+  for(i in rev(unique(z$level))){
+    k=z %>%
+      filter(level==i)
+    
+    for(j in seq(nrow(k))){
+      cat(k$left[j],'-',k$right[j])
+      
+      y[[k$left[j]]]=
+        y[[k$left[j]]] %>%
+          left_join(
+            y[[k$right[j]]]
+            ,by=k$by[j]
+          )
+      
+      cat('|')
+    }
+    
+    y=y %>%
+      .[!names(.)%in%k$right]
+  }
+  
+  l=z %>%
+    slice(1) %>%
+    pull(left)
+  
+  cat('\n')
+  raw_data3$OPD[[str_remove_all(x,'_|\\$')]]=
+    y[[l]]
+}
+
+rm(x,y,z,k,l,i,j)
+```
+
+```{r Join inpatient datasets for each s/t/w, include=FALSE}
+raw_data3$IPD=list()
+
+for(x in c('_s$','_t$','_w$')){
+  cat(x)
+  y=raw_data2 %>%
+    .[str_detect(names(.),x)] %>%
+    `names<-`(str_remove_all(names(.),'^v_|_s$|_t$|_w$')) %>%
+    `names<-`(str_to_upper(names(.)))
+  
+  z=cols_int_conn[c(7:12,13:14),] %>%
+    filter(left%in%names(y) & right%in%names(y))
+  
+  for(i in rev(unique(z$level))){
+    k=z %>%
+      filter(level==i)
+    
+    for(j in seq(nrow(k))){
+      cat(k$left[j],'-',k$right[j])
+      
+      Y=seq(
+          1
+          ,nrow(y[[k$left[j]]])
+          ,length=ifelse(k$right[j]!='UD_ORDER',1,200)
+        ) %>%
+        floor()
+      
+      M=list()
+      for(X in seq(length(Y))){
+        cat('.')
+        Z=c(Y[X],ifelse(X==length(Y),nrow(y[[k$left[j]]]),Y[X+1]-1))
+        
+        K=y[[k$left[j]]] %>%
+          .[Z[1]:Z[2],]
+        
+        L=y[[k$right[j]]] %>%
+          .[.[,k$by[j]]%in%K[[k$by[j]]],]
+        
+        M[[X]]=
+          K %>%
+          left_join(L,by=k$by[j])
+      }
+      
+      y[[k$left[j]]]=
+        M %>%
+        do.call(rbind,.)
+      
+      rm(X,Y,Z,K,L,M)
+      
+      cat('|')
+    }
+    
+    y=y %>%
+      .[!names(.)%in%k$right]
+  }
+  
+  l=z %>%
+    slice(1) %>%
+    pull(left)
+  
+  cat('\n')
+  raw_data3$IPD[[str_remove_all(x,'_|\\$')]]=
+    y[[l]]
+}
+
+rm(x,y,z,k,l,i,j)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
