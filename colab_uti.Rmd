@@ -2324,6 +2324,94 @@ outcome_identifier=
   mutate(outcome=ifelse((UTI==T | URICULT==T) & PNEU==F,T,F))
 ```
 
+```{r Extract tables of hospital stay updates, include=FALSE}
+los_upd=
+  raw_data1b %>%
+  .[str_detect(names(.),'^v_ipd_basic')] %>%
+  lapply(\(x)
+    x %>%
+      select_at(
+        colnames(.) %>%
+          .[str_detect(
+            .
+            ,c('^CHR_NO'
+               ,'^FEE_NO'
+               ,'^IPD_DATE$'
+               ,'^IPD_TIME$'
+               ,'^CPD_DATE$'
+               ,'^CPD_TIME$'
+               ) %>%
+              paste0(collapse='|')
+          )]
+      )
+  ) %>%
+  lapply(
+    X=names(.)
+    ,Y=.
+    ,\(X,Y)
+    Y[[X]] %>%
+      mutate(
+        HOSP=
+          str_sub(X,str_count(X),str_count(X))
+      )
+  ) %>%
+  do.call(rbind,.) %>%
+  mutate(
+    IPD_TIME=
+      ifelse(
+        !is.na(IPD_DATE) & is.na(IPD_TIME)
+        ,'0000'
+        ,IPD_TIME
+      )
+    ,CPD_TIME=
+      ifelse(
+        !is.na(CPD_DATE) & is.na(CPD_TIME)
+        ,'0000'
+        ,IPD_TIME
+      )
+  ) %>%
+  mutate_at(
+    c('IPD_DATE','CPD_DATE')
+    ,\(x)as.numeric(x)+(2023-112)*10000
+  ) %>%
+  mutate_at(
+    c('IPD_DATE','CPD_DATE')
+    ,\(x)
+      paste0(
+        str_sub(x,1,4)
+        ,'-'
+        ,str_sub(x,5,6)
+        ,'-'
+        ,str_sub(x,7,8)
+      )
+  ) %>%
+  mutate_at(
+    c('IPD_TIME','CPD_TIME')
+    ,\(x)
+      paste0(
+        str_sub(x,1,2)
+        ,':'
+        ,str_sub(x,3,4)
+      )
+  ) %>%
+  unite(IPD,IPD_DATE,IPD_TIME,sep=' ') %>%
+  unite(CPD,CPD_DATE,CPD_TIME,sep=' ') %>%
+  mutate_at(
+    c('IPD','CPD')
+    ,\(x)
+      ifelse(
+        str_count(x)==16
+        & str_count(x,'-')==2
+        & str_count(x,' ')==1
+        & str_count(x,'\\:')==1
+        ,x
+        ,NA
+      )
+  ) %>%
+  mutate_at(c('IPD','CPD'),ymd_hm) %>%
+  select(HOSP,everything())
+```
+
 ```{r Create outcome onset identifier, include=FALSE}
 outcome_onset_identifier=
   uti_identifier %>%
@@ -2956,94 +3044,6 @@ cath_d_6d_identifier %>%
     ,p=round(n/total*100,2)
   ) %>%
   ungroup()
-```
-
-```{r Extract tables of hospital stay updates, include=FALSE}
-los_upd=
-  raw_data1b %>%
-  .[str_detect(names(.),'^v_ipd_basic')] %>%
-  lapply(\(x)
-    x %>%
-      select_at(
-        colnames(.) %>%
-          .[str_detect(
-            .
-            ,c('^CHR_NO'
-               ,'^FEE_NO'
-               ,'^IPD_DATE$'
-               ,'^IPD_TIME$'
-               ,'^CPD_DATE$'
-               ,'^CPD_TIME$'
-               ) %>%
-              paste0(collapse='|')
-          )]
-      )
-  ) %>%
-  lapply(
-    X=names(.)
-    ,Y=.
-    ,\(X,Y)
-    Y[[X]] %>%
-      mutate(
-        HOSP=
-          str_sub(X,str_count(X),str_count(X))
-      )
-  ) %>%
-  do.call(rbind,.) %>%
-  mutate(
-    IPD_TIME=
-      ifelse(
-        !is.na(IPD_DATE) & is.na(IPD_TIME)
-        ,'0000'
-        ,IPD_TIME
-      )
-    ,CPD_TIME=
-      ifelse(
-        !is.na(CPD_DATE) & is.na(CPD_TIME)
-        ,'0000'
-        ,IPD_TIME
-      )
-  ) %>%
-  mutate_at(
-    c('IPD_DATE','CPD_DATE')
-    ,\(x)as.numeric(x)+(2023-112)*10000
-  ) %>%
-  mutate_at(
-    c('IPD_DATE','CPD_DATE')
-    ,\(x)
-      paste0(
-        str_sub(x,1,4)
-        ,'-'
-        ,str_sub(x,5,6)
-        ,'-'
-        ,str_sub(x,7,8)
-      )
-  ) %>%
-  mutate_at(
-    c('IPD_TIME','CPD_TIME')
-    ,\(x)
-      paste0(
-        str_sub(x,1,2)
-        ,':'
-        ,str_sub(x,3,4)
-      )
-  ) %>%
-  unite(IPD,IPD_DATE,IPD_TIME,sep=' ') %>%
-  unite(CPD,CPD_DATE,CPD_TIME,sep=' ') %>%
-  mutate_at(
-    c('IPD','CPD')
-    ,\(x)
-      ifelse(
-        str_count(x)==16
-        & str_count(x,'-')==2
-        & str_count(x,' ')==1
-        & str_count(x,'\\:')==1
-        ,x
-        ,NA
-      )
-  ) %>%
-  mutate_at(c('IPD','CPD'),ymd_hm) %>%
-  select(HOSP,everything())
 ```
 
 ```{r Create hospital stay identifier, include=FALSE}
@@ -7235,65 +7235,193 @@ whole_data_d=
 
 ```{r Description of variables, include=FALSE}
 variable_description=
-  c('UTI','UTI diagnosis'
-    ,'URICULT','Urine culture order'
-    ,'PNEU','Pneumonia diagnosis'
-    ,'AGE_GROUP','Age group'
-    ,'AGE','Age (years)'
-    ,'ICU_STAY_10D','ICU stay >=10 days'
-    ,'ICU_STAY_D','ICU stay (days)'
-    ,'CATH_D_6D','Duration of catheterization >=6 days'
-    ,'CATH_D','Duration of catheterization (days)'
-    ,'LOS_4D','Hospital stay >=4 days'
-    ,'LOS','Hospital stay (days)'
-    ,'CATH_PREV','Previous catheterization (n)'
-    ,'SEX_TYPE','Sex (F/M)'
-    ,'prev_DM','T2DM diagnosis/DM medication'
-    ,'prev_DMdiag','T2DM diagnosis'
-    ,'prev_DMmed','DM medication'
-    ,'immob','Immobilization (protective restraint)'
-    ,'indication','Indication of cathetherization'
-    ,'prev_DMrel','DM-related factors'
-    ,'prev_HYP','Hypertension diagnosis'
-    ,'prev_DMinsulin','Exogenous insulin'
-    ,'BMI_GT30','BMI >30 kg/m^2'
-    ,'BMI','BMI (kg/m^2)'
-    ,'prev_DMneph','DM with nephropathy'
-    ,'poor_nutr','Poor nutrition (serum albumin/creatinine)'
-    ,'ALBUMIN_LT3.5','Serum albumin <3.5 g/dL'
-    ,'ALBUMIN','Serum albumin (g/dL)'
-    ,'CREATININE_LT0.5'
-          ,'Serum creatinine <0.5 mg/dL & eGFR >=105 mL/min/1.73 m^2'
-    ,'CREATININE','Serum creatinine (mg/dL)'
-    ,'EGFR','eGFR (mL/min/1.73 m^2)'
-    ,'prev_FI','FI medication (antidiarrheal/laxative)'
-    ,'prev_FIAD','Antidiarrheal drugs'
-    ,'prev_FILX','Laxative drugs'
-    ,'prev_IC','Impaired immune function'
-    ,'prev_ICCS','Corticosteroid drugs'
-    ,'prev_ICHIV','HIV'
-    ,'prev_ICNEO','Malignant neoplasms'
-    ,'CREATININE_GT2','Serum creatinine >2 mg/dL'
-    ,'prev_SGLT2','Sodium-glucose co-transporter (SGLT)-2 inhibitors'
-    ,'prev_uro','Urological issues (double-J/diagnosis/urodynamics)'
-    ,'doublej','Double-J ureteral stent insertion'
-    ,'prev_urodiag','Urological diagnosis'
-    ,'urodyn','Urodynamic examination'
-    ,'prev_utidiag_6mgt2_1ygt3'
-            ,'Previous UTI diagnosis >2x/6 mo or >3/1 y'
-    ,'prev_utidiag_6mgt2','Previous UTI diagnosis >2x/6 mo'
-    ,'prev_utidiag6m','Previous UTI diagnosis last 6 mo (n)'
-    ,'prev_utidiag_1ygt3','Previous UTI diagnosis >3/1 y'
-    ,'prev_utidiag1y','Previous UTI diagnosis last 1 y (n)'
-    ,'prev_neuro','Neurological issues (diagnosis)'
-    ,'prev_AB','Antibiotic drugs last 7 d'
+  read_csv('data/variable_description.csv',show_col_types=F)
+  # c('outcome','CA-UTI'
+  #   ,'UTI','UTI diagnosis'
+  #   ,'URICULT','Urine culture order'
+  #   ,'PNEU','Pneumonia diagnosis'
+  #   ,'AGE_GROUP','Age group'
+  #   ,'AGE','Age (years)'
+  #   ,'ICU_STAY_10D','ICU stay >=10 days'
+  #   ,'ICU_STAY_D','ICU stay (days)'
+  #   ,'CATH_D_6D','Duration of catheterization >=6 days'
+  #   ,'CATH_D','Duration of catheterization (days)'
+  #   ,'LOS_4D','Hospital stay >=4 days'
+  #   ,'LOS','Hospital stay (days)'
+  #   ,'CATH_PREV','Previous catheterization (n)'
+  #   ,'SEX_TYPE','Sex (F/M)'
+  #   ,'prev_DM','T2DM diagnosis/DM medication'
+  #   ,'prev_DMdiag','T2DM diagnosis'
+  #   ,'prev_DMmed','DM medication'
+  #   ,'immob','Immobilization (protective restraint)'
+  #   ,'indication','Indication of cathetherization'
+  #   ,'prev_DMrel','DM-related factors'
+  #   ,'prev_HYP','Hypertension diagnosis'
+  #   ,'prev_DMinsulin','Exogenous insulin'
+  #   ,'BMI_GT30','BMI >30 kg/m^2'
+  #   ,'BMI','BMI (kg/m^2)'
+  #   ,'prev_DMneph','DM with nephropathy'
+  #   ,'poor_nutr','Poor nutrition (serum albumin/creatinine)'
+  #   ,'ALBUMIN_LT3.5','Serum albumin <3.5 g/dL'
+  #   ,'ALBUMIN','Serum albumin (g/dL)'
+  #   ,'CREATININE_LT0.5'
+  #         ,'Serum creatinine <0.5 mg/dL & eGFR >=105 mL/min/1.73 m^2'
+  #   ,'CREATININE','Serum creatinine (mg/dL)'
+  #   ,'EGFR','eGFR (mL/min/1.73 m^2)'
+  #   ,'prev_FI','FI medication (antidiarrheal/laxative)'
+  #   ,'prev_FIAD','Antidiarrheal drugs'
+  #   ,'prev_FILX','Laxative drugs'
+  #   ,'prev_IC','Impaired immune function'
+  #   ,'prev_ICCS','Corticosteroid drugs'
+  #   ,'prev_ICHIV','HIV'
+  #   ,'prev_ICNEO','Malignant neoplasms'
+  #   ,'CREATININE_GT2','Serum creatinine >2 mg/dL'
+  #   ,'prev_SGLT2','Sodium-glucose co-transporter (SGLT)-2 inhibitors'
+  #   ,'prev_uro','Urological issues (double-J/diagnosis/urodynamics)'
+  #   ,'doublej','Double-J ureteral stent insertion'
+  #   ,'prev_urodiag','Urological diagnosis'
+  #   ,'urodyn','Urodynamic examination'
+  #   ,'prev_utidiag_6mgt2_1ygt3'
+  #           ,'Previous UTI diagnosis >2x/6 mo or >3/1 y'
+  #   ,'prev_utidiag_6mgt2','Previous UTI diagnosis >2x/6 mo'
+  #   ,'prev_utidiag6m','Previous UTI diagnosis last 6 mo (n)'
+  #   ,'prev_utidiag_1ygt3','Previous UTI diagnosis >3/1 y'
+  #   ,'prev_utidiag1y','Previous UTI diagnosis last 1 y (n)'
+  #   ,'prev_neuro','Neurological issues (diagnosis)'
+  #   ,'prev_AB','Antibiotic drugs last 7 d'
+  # ) %>%
+  # matrix(
+  #   ncol=2
+  #   ,byrow=T
+  #   ,dimnames=list(NULL,c('variable','description'))
+  # ) %>%
+  # as.data.frame()
+```
+
+```{r Create data partition identifier, include=FALSE}
+partition_d3=list()
+
+set.seed(seed); partition_d3$training=
+  which(whole_data_d3$prediction$HOSP%in%c('t')) %>%
+  sample(0.8*length(.),F) %>%
+  sort()
+
+partition_d3$validation=
+  which(whole_data_d3$prediction$HOSP%in%c('t')) %>%
+  setdiff(partition_d3$training)
+
+partition_d3$test=
+  which(whole_data_d3$prediction$HOSP%in%c('s','w'))
+
+partition_d=list()
+
+set.seed(seed); partition_d$training=
+  which(whole_data_d$prediction$HOSP%in%c('s','t')) %>%
+  sample(0.8*length(.),F) %>%
+  sort()
+
+partition_d$validation=
+  which(whole_data_d$prediction$HOSP%in%c('s','t')) %>%
+  setdiff(partition_d$training)
+
+partition_d$test=
+  which(whole_data_d$prediction$HOSP%in%c('w'))
+```
+
+```{r Show the sample size in each data partition, echo=FALSE}
+whole_data_d3$prediction %>%
+  mutate(
+    set=
+      case_when(
+        seq(nrow(.))%in%partition_d3$training~'Training'
+        ,seq(nrow(.))%in%partition_d3$validation~'Validation'
+        ,seq(nrow(.))%in%partition_d3$test~'Test'
+      ) %>%
+      factor(c('Training','Validation','Test'))
   ) %>%
-  matrix(
-    ncol=2
-    ,byrow=T
-    ,dimnames=list(NULL,c('variable','description'))
+  group_by(set,outcome) %>%
+  summarize(n=n(),.groups='drop') %>%
+  group_by(set) %>%
+  mutate(subtotal=sum(n)) %>%
+  ungroup() %>%
+  mutate(
+    outcome=
+      ifelse(
+        is.na(outcome)
+        ,'3-Missing'
+        ,ifelse(
+          outcome==T
+          ,'2-Yes'
+          ,'1-No'
+        )
+      )
   ) %>%
-  as.data.frame()
+  spread(outcome,n,fill=0) %>%
+  left_join(
+    rbind(
+        filter(.,set%in%c('Training','Validation')) %>%
+          mutate(
+            total=sum(subtotal)
+            ,proportion=round(subtotal/total*100,2)
+          )
+        ,filter(.,set%in%c('Test')) %>%
+          mutate(
+            total=sum(subtotal)
+            ,proportion=round(subtotal/total*100,2)
+          )
+      ) %>%
+      select(set,total,proportion)
+    ,by='set'
+  ) %>%
+  select(set,total,subtotal,proportion,everything()) %>%
+  mutate(prevalence=round(`2-Yes`/subtotal*100,2))
+
+whole_data_d$prediction %>%
+  mutate(
+    set=
+      case_when(
+        seq(nrow(.))%in%partition_d$training~'Training'
+        ,seq(nrow(.))%in%partition_d$validation~'Validation'
+        ,seq(nrow(.))%in%partition_d$test~'Test'
+      ) %>%
+      factor(c('Training','Validation','Test'))
+  ) %>%
+  group_by(set,outcome) %>%
+  summarize(n=n(),.groups='drop') %>%
+  group_by(set) %>%
+  mutate(subtotal=sum(n)) %>%
+  ungroup() %>%
+  mutate(
+    outcome=
+      ifelse(
+        is.na(outcome)
+        ,'3-Missing'
+        ,ifelse(
+          outcome==T
+          ,'2-Yes'
+          ,'1-No'
+        )
+      )
+  ) %>%
+  spread(outcome,n,fill=0) %>%
+  left_join(
+    rbind(
+        filter(.,set%in%c('Training','Validation')) %>%
+          mutate(
+            total=sum(subtotal)
+            ,proportion=round(subtotal/total*100,2)
+          )
+        ,filter(.,set%in%c('Test')) %>%
+          mutate(
+            total=sum(subtotal)
+            ,proportion=round(subtotal/total*100,2)
+          )
+      ) %>%
+      select(set,total,proportion)
+    ,by='set'
+  ) %>%
+  select(set,total,subtotal,proportion,everything()) %>%
+  mutate(prevalence=round(`2-Yes`/subtotal*100,2))
 ```
 
 ```{r Function for descriptive analysis, include=FALSE}
@@ -7308,6 +7436,7 @@ descriptive_analysis=
         ,'HEIGHT'
         ,'WEIGHT'
       )] %>%
+      `names<-`(as.character(.)) %>%
       lapply(\(x){
         y=whole_data_d_prediction %>%
           select_at(c('HOSP','outcome',x)) %>%
@@ -7360,18 +7489,19 @@ descriptive_analysis=
               )
           }
           
-          z %>%
-            mutate(
-              n=paste0('(',n,')')
-              ,total=paste0('(n=',total,')')
-            ) %>%
-            unite(HOSP,HOSP,outcome,total,sep=' ') %>%
-            unite(p,p,n,sep=' ') %>%
-            spread(HOSP,p,fill='0.00 (0)') %>%
-            rename(unit=variable) %>%
-            mutate(unit=paste0(unit,', % (n)')) %>%
-            mutate(variable=x) %>%
-            select(variable,everything())
+          z
+          # %>%
+          #   mutate(
+          #     n=paste0('(',n,')')
+          #     ,total=paste0('(n=',total,')')
+          #   ) %>%
+          #   unite(HOSP,HOSP,outcome,total,sep=' ') %>%
+          #   unite(p,p,n,sep=' ') %>%
+          #   spread(HOSP,p,fill='0.00 (0)') %>%
+          #   rename(unit=variable) %>%
+          #   mutate(unit=paste0(unit,', % (n)')) %>%
+          #   mutate(variable=x) %>%
+          #   select(variable,everything())
         }else{
           z=suppressWarnings(
             y  %>%
@@ -7421,7 +7551,83 @@ descriptive_analysis=
               ,\(x){
                 x=ifelse(x,'2-Yes','1-No')
                 x=ifelse(is.na(x),'3-Missing',x)
-            }) %>%
+            })
+          
+          # %>%
+          #   mutate(
+          #     value=paste0('(',value,')')
+          #     ,total=paste0('(n=',total,')')
+          #   ) %>%
+          #   unite(HOSP,HOSP,outcome,total,sep=' ') %>%
+          #   mutate(std=paste0('(',std,')')) %>%
+          #   unite(avg_std,avg,std,sep=' ') %>%
+          #   mutate(avg_std=ifelse(str_detect(avg_std,'NA'),'-',avg_std)) %>%
+          #   unite(p,p,value,sep=' ') %>%
+          #   lapply(X=1,Y=.,\(X,Y){
+          #     Y %>%
+          #       filter(unit=='avg_std') %>%
+          #       select(-p) %>%
+          #       mutate(
+          #         unit='1-Neither missing/outliers, avg. (SD)'
+          #       ) %>%
+          #       spread(HOSP,avg_std,fill='-') %>%
+          #       rbind(
+          #         Y %>%
+          #           mutate(
+          #             unit=
+          #               case_when(
+          #                 unit=='avg_std'~'1-Neither missing/outliers, % (n)'
+          #                 ,unit=='outliers'~'2-Outliers, % (n)'
+          #                 ,unit=='missing'~'3-Missing, % (n)'
+          #               )
+          #           ) %>%
+          #           select(-avg_std) %>%
+          #           spread(HOSP,p,fill='0.00 (0)')
+          #       ) %>%
+          #       mutate(variable=x) %>%
+          #       select(variable,everything())
+          #   }) %>%
+          #   .[[1]]
+        }
+      })
+    
+    # %>%
+    #   do.call(rbind,.) %>%
+    #   left_join(
+    #     variable_description
+    #     ,by='variable'
+    #   ) %>%
+    #   mutate(description=ifelse(duplicated(variable),'',description)) %>%
+    #   mutate(variable=description) %>%
+    #   select(-description) %>%
+    #   mutate(unit=str_sub(unit,3,str_count(unit)))
+  }
+```
+
+```{r Function for reporting descriptive analysis, include=FALSE}
+report_descriptive_analysis=
+  \(whole_data_d_prediction,descriptive_analysis_results){
+    descriptive_analysis_results %>%
+      names() %>%
+      lapply(\(x){
+        y=whole_data_d_prediction %>%
+          select_at(c('HOSP','outcome',x)) %>%
+          rename_at(x,\(x)'variable')
+        if(class(y$variable)%in%c('logical','factor')){
+          descriptive_analysis_results[[x]] %>%
+            mutate(
+              n=paste0('(',n,')')
+              ,total=paste0('(n=',total,')')
+            ) %>%
+            unite(HOSP,HOSP,outcome,total,sep=' ') %>%
+            unite(p,p,n,sep=' ') %>%
+            spread(HOSP,p,fill='0.00 (0)') %>%
+            rename(unit=variable) %>%
+            mutate(unit=paste0(unit,', % (n)')) %>%
+            mutate(variable=x) %>%
+            select(variable,everything())
+        }else{
+          descriptive_analysis_results[[x]] %>%
             mutate(
               value=paste0('(',value,')')
               ,total=paste0('(n=',total,')')
@@ -7460,7 +7666,8 @@ descriptive_analysis=
       }) %>%
       do.call(rbind,.) %>%
       left_join(
-        variable_description
+        variable_description %>%
+          select(variable,description)
         ,by='variable'
       ) %>%
       mutate(description=ifelse(duplicated(variable),'',description)) %>%
@@ -7470,29 +7677,63 @@ descriptive_analysis=
   }
 ```
 
-```{r Conduct descriptive analyses, eval=FALSE, include=FALSE}
+```{r Conduct descriptive analyses, include=FALSE}
+descriptive_analysis_d3=
+  whole_data_d3$prediction %>%
+  mutate(
+    HOSP=
+      case_when(
+        seq(n())%in%partition_d3$training~'training'
+        ,seq(n())%in%partition_d3$validation~'validation'
+        ,seq(n())%in%partition_d3$test~'test'
+        ,TRUE~'NA'
+      )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
+  ) %>%
+  descriptive_analysis()
+
+descriptive_analysis_d=
+  whole_data_d$prediction %>%
+  mutate(
+    HOSP=
+      case_when(
+        seq(n())%in%partition_d$training~'training'
+        ,seq(n())%in%partition_d$validation~'validation'
+        ,seq(n())%in%partition_d$test~'test'
+        ,TRUE~'NA'
+      )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
+  ) %>%
+  descriptive_analysis()
+```
+
+```{r Report descriptive analyses, eval=FALSE, include=FALSE}
 whole_data_d3$prediction %>%
   mutate(
     HOSP=
-      ifelse(
-        HOSP%in%c('s','w')
-        ,'ws'
-        ,HOSP
+      case_when(
+        seq(n())%in%partition_d3$training~'training'
+        ,seq(n())%in%partition_d3$validation~'validation'
+        ,seq(n())%in%partition_d3$test~'test'
+        ,TRUE~'NA'
       )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
   ) %>%
-  descriptive_analysis() %>%
+  report_descriptive_analysis(descriptive_analysis_d3) %>%
   write_csv('data/desc_whole_data_d3_prediction.csv')
 
 whole_data_d$prediction %>%
   mutate(
     HOSP=
-      ifelse(
-        HOSP%in%c('s','t')
-        ,'st'
-        ,HOSP
+      case_when(
+        seq(n())%in%partition_d$training~'training'
+        ,seq(n())%in%partition_d$validation~'validation'
+        ,seq(n())%in%partition_d$test~'test'
+        ,TRUE~'NA'
       )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
   ) %>%
-  descriptive_analysis() %>%
+  report_descriptive_analysis(descriptive_analysis_d) %>%
   write_csv('data/desc_whole_data_d_prediction.csv')
 ```
 
@@ -7604,7 +7845,16 @@ missing_analysis=function(whole_data_d_prediction){
       ,LB=round(exp(estimate-std.error),2)
       ,UB=round(exp(estimate+std.error),2)
       ,FDR=p.adjust(p.value,method='BH')
-      ,FDR=
+    ) %>%
+    select(outcome,variable,OR,LB,UB,FDR)
+}
+```
+
+```{r Function for reporting missing analysis, include=FALSE}
+report_missing_analysis=function(missing_analysis_results){
+  missing_analysis_results %>%
+    mutate(
+      FDR=
         ifelse(
           FDR<0.001
           ,'p<0.001'
@@ -7614,9 +7864,7 @@ missing_analysis=function(whole_data_d_prediction){
             ,'p>0.05'
           )
         )
-      ,
     ) %>%
-    select(outcome,variable,OR,LB,UB,FDR) %>%
     unite(CI,LB,UB,sep=' to ') %>%
     unite(CI_FDR,CI,FDR,sep='; ') %>%
     mutate(CI_FDR=paste0('(',CI_FDR,')')) %>%
@@ -7625,7 +7873,8 @@ missing_analysis=function(whole_data_d_prediction){
     mutate(variable=factor(variable,unique(variable))) %>%
     spread(outcome,OR_CI_FDR,fill='-') %>%
     left_join(
-      variable_description
+      variable_description %>%
+        select(variable,description)
       ,by='variable'
     ) %>%
     mutate(variable=description) %>%
@@ -7633,15 +7882,45 @@ missing_analysis=function(whole_data_d_prediction){
 }
 ```
 
-```{r Conduct missing analyses, eval=FALSE, include=FALSEE}
-whole_data_d3$prediction %>%
-  filter(HOSP%in%c('t')) %>%
-  missing_analysis() %>%
+```{r Conduct missing analyses, include=FALSE}
+missing_analysis_d3=
+  whole_data_d3$prediction %>%
+  mutate(
+    HOSP=
+      case_when(
+        seq(n())%in%partition_d3$training~'training'
+        ,seq(n())%in%partition_d3$validation~'validation'
+        ,seq(n())%in%partition_d3$test~'test'
+        ,TRUE~'NA'
+      )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
+  ) %>%
+  filter(HOSP%in%c('training')) %>%
+  missing_analysis()
+
+missing_analysis_d=
+  whole_data_d$prediction %>%
+  mutate(
+    HOSP=
+      case_when(
+        seq(n())%in%partition_d$training~'training'
+        ,seq(n())%in%partition_d$validation~'validation'
+        ,seq(n())%in%partition_d$test~'test'
+        ,TRUE~'NA'
+      )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
+  ) %>%
+  filter(HOSP%in%c('training')) %>%
+  missing_analysis()
+```
+
+```{r Report missing analyses, eval=FALSE, include=FALSEE}
+missing_analysis_d3 %>%
+  report_missing_analysis() %>%
   write_csv('data/missing_whole_data_d3_prediction.csv')
 
-whole_data_d$prediction %>%
-  filter(HOSP%in%c('s','t')) %>%
-  missing_analysis() %>%
+missing_analysis_d %>%
+  report_missing_analysis() %>%
   write_csv('data/missing_whole_data_d_prediction.csv')
 ```
 
@@ -7768,7 +8047,16 @@ outlier_analysis=function(whole_data_d_prediction){
       ,LB=round(exp(estimate-std.error),2)
       ,UB=round(exp(estimate+std.error),2)
       ,FDR=p.adjust(p.value,method='BH')
-      ,FDR=
+    ) %>%
+    select(outcome,variable,OR,LB,UB,FDR)
+}
+```
+
+```{r Function for reporting outlier analysis, include=FALSE}
+report_outlier_analysis=function(outlier_analysis_results){
+  outlier_analysis_results %>%
+    mutate(
+      FDR=
         ifelse(
           FDR<0.001
           ,'p<0.001'
@@ -7778,9 +8066,7 @@ outlier_analysis=function(whole_data_d_prediction){
             ,'p>0.05'
           )
         )
-      ,
     ) %>%
-    select(outcome,variable,OR,LB,UB,FDR) %>%
     unite(CI,LB,UB,sep=' to ') %>%
     unite(CI_FDR,CI,FDR,sep='; ') %>%
     mutate(CI_FDR=paste0('(',CI_FDR,')')) %>%
@@ -7789,7 +8075,8 @@ outlier_analysis=function(whole_data_d_prediction){
     mutate(variable=factor(variable,unique(variable))) %>%
     spread(outcome,OR_CI_FDR,fill='-') %>%
     left_join(
-      variable_description
+      variable_description %>%
+        select(variable,description)
       ,by='variable'
     ) %>%
     mutate(variable=description) %>%
@@ -7797,183 +8084,553 @@ outlier_analysis=function(whole_data_d_prediction){
 }
 ```
 
-```{r Conduct outlier analyses, eval=FALSE, include=FALSEE}
-whole_data_d3$prediction %>%
-  filter(HOSP%in%c('t')) %>%
-  outlier_analysis() %>%
+```{r Conduct outlier analyses, include=FALSE}
+outlier_analysis_d3=
+  whole_data_d3$prediction %>%
+  mutate(
+    HOSP=
+      case_when(
+        seq(n())%in%partition_d3$training~'training'
+        ,seq(n())%in%partition_d3$validation~'validation'
+        ,seq(n())%in%partition_d3$test~'test'
+        ,TRUE~'NA'
+      )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
+  ) %>%
+  filter(HOSP%in%c('training')) %>%
+  outlier_analysis()
+
+outlier_analysis_d=
+  whole_data_d$prediction %>%
+  mutate(
+    HOSP=
+      case_when(
+        seq(n())%in%partition_d$training~'training'
+        ,seq(n())%in%partition_d$validation~'validation'
+        ,seq(n())%in%partition_d$test~'test'
+        ,TRUE~'NA'
+      )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
+  ) %>%
+  filter(HOSP%in%c('training')) %>%
+  outlier_analysis()
+```
+
+```{r Report outlier analyses, eval=FALSE, include=FALSE}
+outlier_analysis_d3 %>%
+  report_outlier_analysis() %>%
   write_csv('data/outlier_whole_data_d3_prediction.csv')
 
-whole_data_d$prediction %>%
-  filter(HOSP%in%c('s','t')) %>%
-  outlier_analysis() %>%
+outlier_analysis_d %>%
+  report_outlier_analysis() %>%
   write_csv('data/outlier_whole_data_d_prediction.csv')
 ```
 
-```{r Create data partition identifier}
-partition_d3=list()
-
-set.seed(seed); partition_d3$training=
-  which(whole_data_d3$prediction$HOSP%in%c('t')) %>%
-  sample(0.8*length(.),F) %>%
-  sort()
-
-partition_d3$validation=
-  which(whole_data_d3$prediction$HOSP%in%c('t')) %>%
-  setdiff(partition_d3$training)
-
-partition_d3$test=
-  which(whole_data_d3$prediction$HOSP%in%c('s','w'))
-
-partition_d=list()
-
-set.seed(seed); partition_d$training=
-  which(whole_data_d$prediction$HOSP%in%c('s','t')) %>%
-  sample(0.8*length(.),F) %>%
-  sort()
-
-partition_d$validation=
-  which(whole_data_d$prediction$HOSP%in%c('s','t')) %>%
-  setdiff(partition_d$training)
-
-partition_d$test=
-  which(whole_data_d$prediction$HOSP%in%c('w'))
+```{r Function for determining candidate predictor eligibility, include=FALSE}
+candidate_predictor_eligibility=
+  function(
+    descriptive_analysis_results
+    ,var_desc
+    ,missing_analysis_results
+    ,outlier_analysis_results
+  ){
+    cat_results=
+      descriptive_analysis_results %>%
+      lapply(X=c('avg','variable'),Y=.,\(X,Y)
+        Y %>%
+          .[lapply(.,colnames) %>%
+              sapply(\(x)X%in%x)
+          ] %>%
+          lapply(X=names(.),Y=.,\(X,Y)
+            Y[[X]] %>%
+              mutate(variable_name=X)
+          ) %>%
+          `names<-`(
+            Y %>%
+              .[lapply(.,colnames) %>%
+                  sapply(\(x)X%in%x)
+              ] %>%
+              names()
+          ) %>%
+          lapply(mutate,scale=ifelse(X=='avg','numeric','categoric'))
+      ) %>%
+      `names<-`(c('numeric','categoric'))
+    
+    pf=
+      cat_results %>%
+      lapply(X=1,Y=.,\(X,Y)
+        rep('N/A',length(Y$numeric)) %>%
+          `names<-`(names(Y$numeric)) %>%
+          c(Y$categoric %>%
+              sapply(\(x)
+                (c('1-No','2-Yes') %>%
+                    expand.grid(
+                      x$variable %>%
+                        .[!str_detect(.,'Missing')] %>%
+                        unique()
+                    ) %>%
+                    `names<-`(c('outcome','variable')) %>%
+                    left_join(x,by=c('outcome','variable')) %>%
+                    pull(n) %>%
+                    is.na() %>%
+                    any()
+                )|(
+                 any(
+                   filter(
+                     x
+                     ,!str_detect(outcome,'Missing')
+                      & !str_detect(variable,'Missing')
+                   )$p==100
+                  )
+                )
+              ) %>%
+              `names<-`(names(Y$categoric))
+          )
+      ) %>%
+      .[[1]] %>%
+      data.frame(pf_var='pf',value=.) %>%
+      rownames_to_column(var='variable')
+    
+    m_pf=
+      cat_results %>%
+      lapply(X=1,Y=.,\(X,Y)
+        Y$numeric %>%
+          lapply(filter,unit=='missing') %>%
+          lapply(filter,!str_detect(outcome,'Missing')) %>%
+          sapply(\(x)
+            x %>%
+              lapply(X=1,Y=.,\(X,Y)
+                ifelse(
+                  all(Y$value==0)
+                  ,'N/A'
+                  ,ifelse(
+                    any(Y$value==0)
+                    ,'yes'
+                    ,ifelse(
+                      all(Y$value>0)
+                      ,'no'
+                      ,NA
+                    )
+                  )
+                )
+              ) %>%
+              .[[1]]
+          ) %>%
+          c(Y$categoric %>%
+              sapply(\(x)
+                c('1-No','2-Yes') %>%
+                  expand.grid('3-Missing') %>%
+                  `names<-`(c('outcome','variable')) %>%
+                  left_join(x,by=c('outcome','variable')) %>%
+                  mutate(
+                    n=n %>%
+                      str_remove_all(',') %>%
+                      as.numeric()
+                  ) %>%
+                  mutate(n=ifelse(is.na(n),0,n)) %>%
+                  lapply(X=1,Y=.,\(X,Y)
+                    ifelse(
+                      all(Y$n==0)
+                      ,'N/A'
+                      ,ifelse(
+                        any(Y$n==0)
+                        ,'yes'
+                        ,ifelse(
+                          all(Y$n>0)
+                          ,'no'
+                          ,NA
+                        )
+                      )
+                    )
+                  ) %>%
+                  .[[1]]
+              )
+          )
+      ) %>%
+      .[[1]] %>%
+      data.frame(pf_var='m_pf',value=.) %>%
+      rownames_to_column(var='variable')
+    
+    om_pf=
+      cat_results %>%
+      lapply(X=1,Y=.,\(X,Y)
+        Y$numeric %>%
+          lapply(filter,unit%in%c('missing','outliers')) %>%
+          lapply(filter,!str_detect(outcome,'Missing')) %>%
+          sapply(\(x)
+            x %>%
+              mutate(
+                value=
+                  value %>%
+                  str_remove_all(',') %>%
+                  as.numeric()
+              ) %>%
+              group_by(outcome) %>%
+              summarize(value=sum(value)) %>%
+              lapply(X=1,Y=.,\(X,Y)
+                ifelse(
+                  all(Y$value==0)
+                  ,'N/A'
+                  ,ifelse(
+                    any(Y$value==0)
+                    ,'yes'
+                    ,ifelse(
+                      all(Y$value>0)
+                      ,'no'
+                      ,NA
+                    )
+                  )
+                )
+              ) %>%
+              .[[1]]
+          ) %>%
+          c(Y$categoric %>%
+              sapply(\(x)
+                c('1-No','2-Yes') %>%
+                  expand.grid('3-Missing') %>%
+                  `names<-`(c('outcome','variable')) %>%
+                  left_join(x,by=c('outcome','variable')) %>%
+                  mutate(
+                    n=n %>%
+                      str_remove_all(',') %>%
+                      as.numeric()
+                  ) %>%
+                  mutate(n=ifelse(is.na(n),0,n)) %>%
+                  lapply(X=1,Y=.,\(X,Y)
+                    ifelse(
+                      all(Y$n==0)
+                      ,'N/A'
+                      ,ifelse(
+                        any(Y$n==0)
+                        ,'yes'
+                        ,ifelse(
+                          all(Y$n>0)
+                          ,'no'
+                          ,NA
+                          
+                        )
+                      )
+                    )
+                  ) %>%
+                  .[[1]]
+              )
+          )
+      ) %>%
+      .[[1]] %>%
+      data.frame(pf_var='om_pf',value=.) %>%
+      rownames_to_column(var='variable')
+    
+    pf %>%
+      rbind(m_pf) %>%
+      rbind(om_pf) %>%
+      mutate(
+        value=
+          case_when(
+            value=='TRUE'|value=='yes'~'yes'
+            ,value=='FALSE'|value=='no'~'no'
+            ,value=='N/A'~'N/A'
+            ,TRUE~'NA'
+          )
+        ,value=ifelse(value=='NA',NA,value)
+      ) %>%
+      mutate(
+        pf_var=
+          pf_var %>%
+          factor(unique(.))
+      ) %>%
+      spread(pf_var,value) %>%
+      mutate(available='yes') %>%
+      right_join(var_desc,by='variable') %>%
+      mutate(
+        available=ifelse(is.na(available),'no',available)
+        ,available=ifelse(variable=='outcome','yes',available)
+      ) %>%
+      mutate(
+        pf=ifelse(variable=='outcome','N/A',pf)
+        ,m_pf=ifelse(variable=='outcome','N/A',m_pf)
+        ,om_pf=ifelse(variable=='outcome','N/A',om_pf)
+      ) %>%
+      left_join(
+        cat_results$numeric %>%
+          lapply(select,variable=variable_name,scale) %>%
+          c(cat_results$categoric %>%
+              lapply(select,variable=variable_name,scale)
+          ) %>%
+          do.call(rbind,.) %>%
+          filter(!duplicated(.))
+        ,by='variable'
+      ) %>%
+      mutate(
+        scale=ifelse(variable=='outcome','categoric',scale)
+      ) %>%
+      left_join(
+        missing_analysis_results %>%
+          filter(outcome=='2-Yes') %>%
+          mutate(m_mnar=ifelse(FDR<=0.05,'yes','no')) %>%
+          select(variable,m_mnar)
+        ,by='variable'
+      ) %>%
+      mutate(m_mnar=ifelse(m_pf=='N/A','N/A',m_mnar)) %>%
+      left_join(
+        outlier_analysis_results %>%
+          filter(outcome=='2-Yes') %>%
+          mutate(om_mnar=ifelse(FDR<=0.05,'yes','no')) %>%
+          select(variable,om_mnar)
+        ,by='variable'
+      ) %>%
+      mutate(om_mnar=ifelse(om_pf=='N/A'|scale=='categoric','N/A',om_mnar)) %>%
+      select_at(
+        c(colnames(var_desc)
+          ,c('scale','available','pf','m_pf','m_mnar','om_pf','om_mnar')
+        )
+      ) %>%
+      arrange(factor(variable,var_desc$variable))
+  }
 ```
 
-```{r Show the sample size in each data partition}
-whole_data_d3$prediction %>%
+```{r Determine eligible candidate predictors, include=FALSE}
+candidate_predictor_eligible_d3=
+  whole_data_d3$prediction %>%
   mutate(
-    set=
+    HOSP=
       case_when(
-        seq(nrow(.))%in%partition_d3$training~'Training'
-        ,seq(nrow(.))%in%partition_d3$validation~'Validation'
-        ,seq(nrow(.))%in%partition_d3$test~'Test'
-      ) %>%
-      factor(c('Training','Validation','Test'))
-  ) %>%
-  group_by(set,outcome) %>%
-  summarize(n=n(),.groups='drop') %>%
-  group_by(set) %>%
-  mutate(subtotal=sum(n)) %>%
-  ungroup() %>%
-  mutate(
-    outcome=
-      ifelse(
-        is.na(outcome)
-        ,'3-Missing'
-        ,ifelse(
-          outcome==T
-          ,'2-Yes'
-          ,'1-No'
-        )
+        seq(n())%in%partition_d3$training~'training'
+        ,seq(n())%in%partition_d3$validation~'validation'
+        ,seq(n())%in%partition_d3$test~'test'
+        ,TRUE~'NA'
       )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
   ) %>%
-  spread(outcome,n,fill=0) %>%
-  left_join(
-    rbind(
-        filter(.,set%in%c('Training','Validation')) %>%
-          mutate(
-            total=sum(subtotal)
-            ,proportion=round(subtotal/total*100,2)
-          )
-        ,filter(.,set%in%c('Test')) %>%
-          mutate(
-            total=sum(subtotal)
-            ,proportion=round(subtotal/total*100,2)
-          )
-      ) %>%
-      select(set,total,proportion)
-    ,by='set'
-  ) %>%
-  select(set,total,subtotal,proportion,everything()) %>%
-  mutate(prevalence=round(`2-Yes`/subtotal*100,2))
+  descriptive_analysis() %>%
+  lapply(filter,HOSP=='training') %>%
+  candidate_predictor_eligibility(
+    variable_description
+    ,missing_analysis_d3
+    ,outlier_analysis_d3
+  )
 
-whole_data_d$prediction %>%
+candidate_predictor_eligible_d=
+  whole_data_d$prediction %>%
   mutate(
-    set=
+    HOSP=
       case_when(
-        seq(nrow(.))%in%partition_d$training~'Training'
-        ,seq(nrow(.))%in%partition_d$validation~'Validation'
-        ,seq(nrow(.))%in%partition_d$test~'Test'
-      ) %>%
-      factor(c('Training','Validation','Test'))
-  ) %>%
-  group_by(set,outcome) %>%
-  summarize(n=n(),.groups='drop') %>%
-  group_by(set) %>%
-  mutate(subtotal=sum(n)) %>%
-  ungroup() %>%
-  mutate(
-    outcome=
-      ifelse(
-        is.na(outcome)
-        ,'3-Missing'
-        ,ifelse(
-          outcome==T
-          ,'2-Yes'
-          ,'1-No'
-        )
+        seq(n())%in%partition_d$training~'training'
+        ,seq(n())%in%partition_d$validation~'validation'
+        ,seq(n())%in%partition_d$test~'test'
+        ,TRUE~'NA'
       )
+    ,HOSP=ifelse(HOSP=='NA',NA,HOSP)
   ) %>%
-  spread(outcome,n,fill=0) %>%
-  left_join(
-    rbind(
-        filter(.,set%in%c('Training','Validation')) %>%
-          mutate(
-            total=sum(subtotal)
-            ,proportion=round(subtotal/total*100,2)
+  descriptive_analysis() %>%
+  lapply(filter,HOSP=='training') %>%
+  candidate_predictor_eligibility(
+    variable_description
+    ,missing_analysis_d
+    ,outlier_analysis_d
+  )
+```
+
+```{r Function for reporting candidate predictor eligibility, include=FALSE}
+report_candidate_predictor_eligibility=
+  function(
+    candidate_predictor_eligibility_results
+    ,var_desc
+    ,candidate_predictor_eligible
+  ){
+    candidate_predictor_eligibility_results=
+      candidate_predictor_eligibility_results %>%
+      lapply(
+        X=var_desc %>%
+          filter(variable_level=='yes') %>%
+          pull(variable)
+        ,Y=.
+        ,\(X,Y)
+          ifelse(
+            rep(
+              nrow(filter(Y,variable==X))>0
+                # & nrow(filter(Y,indicator_level==X))==nrow(filter(
+                #   candidate_predictor_eligible %>%
+                #     filter(available%in%c('yes'))
+                #   ,indicator_level==X
+                # ))
+              ,2
+            )
+            ,list(
+              filter(Y,variable==X)
+              ,filter(Y,indicator_level==X)
+            )
+            ,list(
+              filter(Y,indicator_level==X)
+              ,filter(Y,indicator_level==X)
+            )
           )
-        ,filter(.,set%in%c('Test')) %>%
-          mutate(
-            total=sum(subtotal)
-            ,proportion=round(subtotal/total*100,2)
-          )
+      )
+    
+    candidate_predictor_eligibility_variables=
+      candidate_predictor_eligibility_results %>%
+      lapply(\(x)x[[1]]) %>%
+      do.call(rbind,.) %>%
+      filter(type=='predictor') %>%
+      select(variable,variable_level,scale)
+    
+    candidate_predictor_eligibility_indicators=
+      candidate_predictor_eligibility_results %>%
+      lapply(\(x)x[[2]]) %>%
+      do.call(rbind,.) %>%
+      filter(type=='predictor') %>%
+      select(variable,variable_level,scale)
+    
+    candidate_predictor_eligibility_summary=
+      candidate_predictor_eligibility_variables %>%
+      group_by(variable_level,scale) %>%
+      summarize(n=n(),.groups='drop') %>%
+      rename(level=variable_level) %>%
+      mutate(
+        level=
+          ifelse(level=='yes','variable','indicator') %>%
+          factor(c('variable','indicator'))
       ) %>%
-      select(set,total,proportion)
-    ,by='set'
+      arrange(level)
+    
+    list(
+      variable=candidate_predictor_eligibility_variables
+      ,indicator=candidate_predictor_eligibility_indicators
+      ,summary=candidate_predictor_eligibility_summary
+    )
+  }
+```
+
+```{r Report candidate predictor eligibility, include=FALSE}
+report_candidate_predictor_eligible_d3=
+  candidate_predictor_eligible_d3 %>%
+  list(initial=.) %>%
+  c(.$initial %>%
+      filter(available%in%c('yes')) %>%
+      list(by_available=.)
   ) %>%
-  select(set,total,subtotal,proportion,everything()) %>%
-  mutate(prevalence=round(`2-Yes`/subtotal*100,2))
+  c(.$by_available %>%
+      filter(pf%in%c('no','N/A')) %>%
+      list(by_pf=.)
+  ) %>%
+  c(.$by_pf %>%
+      filter(
+        # m_pf%in%c('no','N/A')
+        # &
+        (
+          m_mnar%in%c('no','N/A')
+          |
+          is.na(m_mnar)
+        )
+      ) %>%
+      list(by_m=.)
+  ) %>%
+  c(.$by_m %>%
+      filter(
+        # om_pf%in%c('no','N/A')
+        # &
+        (
+          om_mnar%in%c('no','N/A')
+          |
+          is.na(om_mnar)
+        )
+      ) %>%
+      list(by_om=.)
+  ) %>%
+  lapply(
+    report_candidate_predictor_eligibility
+    ,variable_description
+    ,candidate_predictor_eligible_d3
+  )
+
+report_candidate_predictor_eligible_d=
+  candidate_predictor_eligible_d %>%
+  list(initial=.) %>%
+  c(.$initial %>%
+      filter(available%in%c('yes')) %>%
+      list(by_available=.)
+  ) %>%
+  c(.$by_available %>%
+      filter(pf%in%c('no','N/A')) %>%
+      list(by_pf=.)
+  ) %>%
+  c(.$by_pf %>%
+      filter(
+        # m_pf%in%c('no','N/A')
+        # &
+        (
+          m_mnar%in%c('no','N/A')
+          |
+          is.na(m_mnar)
+        )
+      ) %>%
+      list(by_m=.)
+  ) %>%
+  c(.$by_m %>%
+      filter(
+        # om_pf%in%c('no','N/A')
+        # &
+        (
+          om_mnar%in%c('no','N/A')
+          |
+          is.na(om_mnar)
+        )
+      ) %>%
+      list(by_om=.)
+  ) %>%
+  lapply(
+    report_candidate_predictor_eligibility
+    ,variable_description
+    ,candidate_predictor_eligible_d
+  )
 ```
 
 ```{r Select MCAR candidate predictors with and without outliers, include=FALSE}
 cand_predictors_d3=
-  c('AGE'
-    ,'ICU_STAY_D'
-    ,'CATH_D'
-    ,'LOS_4D'
-    ,'SEX_TYPE'
-    ,'prev_DM'
-    ,'prev_HYP'
-    ,'prev_DMinsulin'
-    ,'BMI'
-    ,'CREATININE_LT0.5'
-    ,'prev_FILX'
-    ,'prev_ICCS'
-    ,'prev_ICNEO'
-    ,'CREATININE_GT2'
-    ,'prev_utidiag6m'
-    ,'prev_utidiag1y'
-    ,'prev_neuro'
-    ,'prev_AB'
-  )
+  report_candidate_predictor_eligible_d3 %>%
+  .$by_om %>%
+  .$variable %>%
+  .$variable
+  # c('AGE'
+  #   ,'ICU_STAY_D'
+  #   ,'CATH_D'
+  #   ,'LOS_4D'
+  #   ,'SEX_TYPE'
+  #   ,'prev_DM'
+  #   ,'prev_HYP'
+  #   ,'prev_DMinsulin'
+  #   ,'BMI'
+  #   ,'CREATININE_LT0.5'
+  #   ,'prev_FILX'
+  #   ,'prev_ICCS'
+  #   ,'prev_ICNEO'
+  #   ,'CREATININE_GT2'
+  #   ,'prev_utidiag6m'
+  #   ,'prev_utidiag1y'
+  #   ,'prev_neuro'
+  #   ,'prev_AB'
+  # )
 
 cand_predictors_d=
-  c('AGE_GROUP'
-    ,'ICU_STAY_10D'
-    ,'CATH_D'
-    ,'LOS_4D'
-    ,'SEX_TYPE'
-    ,'prev_DMdiag'
-    ,'immob'
-    ,'prev_HYP'
-    ,'BMI_GT30'
-    ,'prev_DMneph'
-    ,'prev_ICHIV'
-    ,'prev_ICNEO'
-    ,'prev_uro'
-    ,'prev_utidiag_6mgt2_1ygt3'
-    ,'prev_neuro'
-  )
+  report_candidate_predictor_eligible_d %>%
+  .$by_om %>%
+  .$variable %>%
+  .$variable
+  # c('AGE_GROUP'
+  #   ,'ICU_STAY_10D'
+  #   ,'CATH_D'
+  #   ,'LOS_4D'
+  #   ,'SEX_TYPE'
+  #   ,'prev_DMdiag'
+  #   ,'immob'
+  #   ,'prev_HYP'
+  #   ,'BMI_GT30'
+  #   ,'prev_DMneph'
+  #   ,'prev_ICHIV'
+  #   ,'prev_ICNEO'
+  #   ,'prev_uro'
+  #   ,'prev_utidiag_6mgt2_1ygt3'
+  #   ,'prev_neuro'
+  # )
 ```
 
 ```{r Function for turning outlier to missing, include=FALSE}
@@ -8015,8 +8672,22 @@ if(all(c(2,3)%in%comp_req)){ # 10s
   impute_model_d3=
     whole_data_d3$prediction %>%
     left_join(outcome_onset_identifier,by=colnames(uri_cath_d3$prediction)) %>%
-    .[partition_d3$training,c('outcome',cand_predictors_d3)] %>%
+    .[partition_d3$training,cand_predictors_d3] %>%
     outliers_to_missing() %>%
+    mutate(seq=seq(n())) %>%
+    left_join(
+      whole_data_d3$prediction %>%
+        left_join(
+          outcome_onset_identifier
+          ,by=colnames(uri_cath_d3$prediction)
+        ) %>%
+        .[partition_d3$training,c('outcome','outcome_onset'),drop=F] %>%
+        mutate(outcome_onset=ifelse(outcome_onset<0,NA,outcome_onset)) %>%
+        mutate(seq=seq(n()))
+      ,by='seq'
+    ) %>%
+    select(-seq) %>%
+    select(outcome,outcome_onset,everything()) %>%
     mice(m=10,method='pmm',seed=seed)
   
   imputed_d3=
@@ -8027,12 +8698,13 @@ if(all(c(2,3)%in%comp_req)){ # 10s
           outcome_onset_identifier
           ,by=colnames(uri_cath_d3$prediction)
         ) %>%
-        .[x,c('outcome',cand_predictors_d3)]
+        .[x,c('outcome','outcome_onset',cand_predictors_d3)]
     ) %>%
     `names<-`(names(partition_d3)) %>%
     lapply(outliers_to_missing) %>%
     lapply(\(x)mice.mids(impute_model_d3,newdata=x)) %>%
     lapply(complete) %>%
+    lapply(select,-outcome,-outcome_onset) %>%
     lapply(mutate,seq=seq(n())) %>%
     lapply(X=names(.),Y=.,Z=partition_d3,\(X,Y,Z)
       Y[[X]] %>%
@@ -8042,7 +8714,7 @@ if(all(c(2,3)%in%comp_req)){ # 10s
               outcome_onset_identifier
               ,by=colnames(uri_cath_d3$prediction)
             ) %>%
-            .[Z[[X]],'outcome_onset',drop=F] %>%
+            .[Z[[X]],c('outcome','outcome_onset'),drop=F] %>%
             mutate(outcome_onset=ifelse(outcome_onset<0,NA,outcome_onset)) %>%
             mutate(seq=seq(n()))
           ,by='seq'
@@ -8065,8 +8737,22 @@ if(all(c(2,3)%in%comp_req)){ # 20m 13s
   impute_model_d=
     whole_data_d$prediction %>%
     left_join(outcome_onset_identifier,by=colnames(uri_cath_d$prediction)) %>%
-    .[partition_d$training,c('outcome',cand_predictors_d)] %>%
+    .[partition_d$training,cand_predictors_d] %>%
     outliers_to_missing() %>%
+    mutate(seq=seq(n())) %>%
+    left_join(
+      whole_data_d$prediction %>%
+        left_join(
+          outcome_onset_identifier
+          ,by=colnames(uri_cath_d$prediction)
+        ) %>%
+        .[partition_d$training,c('outcome','outcome_onset'),drop=F] %>%
+        mutate(outcome_onset=ifelse(outcome_onset<0,NA,outcome_onset)) %>%
+        mutate(seq=seq(n()))
+      ,by='seq'
+    ) %>%
+    select(-seq) %>%
+    select(outcome,outcome_onset,everything()) %>%
     mice(m=10,method='pmm',seed=seed)
   
   imputed_d=
@@ -8077,12 +8763,13 @@ if(all(c(2,3)%in%comp_req)){ # 20m 13s
           outcome_onset_identifier
           ,by=colnames(uri_cath_d$prediction)
         ) %>%
-        .[x,c('outcome',cand_predictors_d)]
+        .[x,c('outcome','outcome_onset',cand_predictors_d)]
     ) %>%
     `names<-`(names(partition_d)) %>%
     lapply(outliers_to_missing) %>%
     lapply(\(x)mice.mids(impute_model_d,newdata=x)) %>%
     lapply(complete) %>%
+    lapply(select,-outcome,-outcome_onset) %>%
     lapply(mutate,seq=seq(n())) %>%
     lapply(X=names(.),Y=.,Z=partition_d,\(X,Y,Z)
       Y[[X]] %>%
@@ -8092,7 +8779,7 @@ if(all(c(2,3)%in%comp_req)){ # 20m 13s
               outcome_onset_identifier
               ,by=colnames(uri_cath_d$prediction)
             ) %>%
-            .[Z[[X]],'outcome_onset',drop=F] %>%
+            .[Z[[X]],c('outcome','outcome_onset'),drop=F] %>%
             mutate(outcome_onset=ifelse(outcome_onset<0,NA,outcome_onset)) %>%
             mutate(seq=seq(n()))
           ,by='seq'
@@ -8234,24 +8921,31 @@ numerize_var=
 ```{r Function for obtaining avg and std for scaling, include=FALSE}
 scaler=
   function(data){
-    data %>%
-      .[,sapply(.,is.numeric),drop=F] %>%
-      mutate(seq=seq(n())) %>%
-      gather(variable,value,-seq) %>%
-      group_by(variable) %>%
-      mutate(
-        q1=quantile(value,0.25,na.rm=T)
-        ,q3=quantile(value,0.75,na.rm=T)
-      ) %>%
-      mutate(
-        lb=q1-1.5*(q3-q1)
-        ,ub=q3+1.5*(q3-q1)
-      ) %>%
-      mutate(outlier=value<lb | value>ub) %>%
-      summarize(
-        avg=mean(ifelse(outlier,NA,value),na.rm=T)
-        ,std=sd(ifelse(outlier,NA,value),na.rm=T)
-      )
+    numeric_data=
+      data %>%
+      .[,sapply(.,is.numeric),drop=F]
+    
+    if(ncol(numeric_data)==0){
+      data.frame(variable='XXX',avg=NA,std=NA)
+    }else{
+      numeric_data %>%
+        mutate(seq=seq(n())) %>%
+        gather(variable,value,-seq) %>%
+        group_by(variable) %>%
+        mutate(
+          q1=quantile(value,0.25,na.rm=T)
+          ,q3=quantile(value,0.75,na.rm=T)
+        ) %>%
+        mutate(
+          lb=q1-1.5*(q3-q1)
+          ,ub=q3+1.5*(q3-q1)
+        ) %>%
+        mutate(outlier=value<lb | value>ub) %>%
+        summarize(
+          avg=mean(ifelse(outlier,NA,value),na.rm=T)
+          ,std=sd(ifelse(outlier,NA,value),na.rm=T)
+        )
+    }
   }
 ```
 
@@ -8811,6 +9505,7 @@ coxph_d3 %>%
   select(-latest_onset,-denominator) %>%
   mutate(FDR=p.adjust(p.value,method='BH')) %>%
   filter(FDR<=0.05) %>%
+  filter(L95>=1|U95<=(1/1)) %>%
   select(-estimate,-std.error,-statistic) %>%
   mutate_at(
     .[,sapply(.,is.numeric)] %>%
@@ -8823,6 +9518,7 @@ coxph_d %>%
   select(-latest_onset,-denominator) %>%
   mutate(FDR=p.adjust(p.value,method='BH')) %>%
   filter(FDR<=0.05) %>%
+  filter(L95>=1|U95<=(1/1)) %>%
   select(-estimate,-std.error,-statistic) %>%
   mutate_at(
     .[,sapply(.,is.numeric)] %>%
@@ -8838,7 +9534,8 @@ cand_predictors2_d3=
     coxph_d3 %>%
       filter(latest_onset==range_span_d3$r & denominator==range_span_d3$s) %>%
       mutate(FDR=p.adjust(p.value,method='BH')) %>%
-      filter(FDR<=0.05)
+      filter(FDR<=0.05) %>%
+      filter(L95>=1|U95<=(1/1))
     ,predictor
   )]
 
@@ -8848,7 +9545,8 @@ cand_predictors2_d=
     coxph_d %>%
       filter(latest_onset==range_span_d$r & denominator==range_span_d$s) %>%
       mutate(FDR=p.adjust(p.value,method='BH')) %>%
-      filter(FDR<=0.05)
+      filter(FDR<=0.05) %>%
+      filter(L95>=1|U95<=(1/1))
     ,predictor
   )]
 ```
@@ -8970,6 +9668,7 @@ inter_predictor_assoc_d=
 inter_predictor_assoc_d3 %>%
   mutate(FDR=p.adjust(p.value,method='BH')) %>%
   filter(FDR<=0.05) %>%
+  filter(L95>=1|U95<=(1/1)) %>%
   select(-estimate,-std.error,-statistic) %>%
   mutate_at(
     .[,sapply(.,is.numeric)] %>%
@@ -8980,6 +9679,7 @@ inter_predictor_assoc_d3 %>%
 inter_predictor_assoc_d %>%
   mutate(FDR=p.adjust(p.value,method='BH')) %>%
   filter(FDR<=0.05) %>%
+  filter(L95>=1|U95<=(1/1)) %>%
   select(-estimate,-std.error,-statistic) %>%
   mutate_at(
     .[,sapply(.,is.numeric)] %>%
@@ -8988,9 +9688,35 @@ inter_predictor_assoc_d %>%
   )
 ```
 
+```{r Report interpredictor association test results, eval=FALSE, include=FALSE}
+inter_predictor_assoc_d3 %>%
+  mutate(FDR=p.adjust(p.value,method='BH')) %>%
+  filter(FDR<=0.05) %>%
+  filter(L95>=1|U95<=(1/1)) %>%
+  select(-estimate,-std.error,-statistic) %>%
+  mutate_at(
+    .[,sapply(.,is.numeric)] %>%
+      colnames()
+    ,\(x)ifelse(x<0.001,'<0.001',round(x,3))
+  ) %>%
+  write_csv('data/sig_inter_predictor_assoc_d3.csv')
+
+inter_predictor_assoc_d %>%
+  mutate(FDR=p.adjust(p.value,method='BH')) %>%
+  filter(FDR<=0.05) %>%
+  filter(L95>=1|U95<=(1/1)) %>%
+  select(-estimate,-std.error,-statistic) %>%
+  mutate_at(
+    .[,sapply(.,is.numeric)] %>%
+      colnames()
+    ,\(x)ifelse(x<0.001,'<0.001',round(x,3))
+  ) %>%
+  write_csv('data/sig_inter_predictor_assoc_d.csv')
+```
+
 ```{r Function to identify adjusment variables, include=FALSE}
 identify_adj_vars=
-  function(data,inter_predictor_assoc){
+  function(data,inter_predictor_assoc,effect_size=1){
     data %>%
       colnames(.) %>%
       .[!.%in%c('km_outcome','outcome','outcome_onset')] %>%
@@ -9001,6 +9727,7 @@ identify_adj_vars=
               inter_predictor_assoc %>%
               mutate(FDR=p.adjust(p.value,method='BH')) %>%
               filter(FDR<=0.05) %>%
+              filter(L95>=effect_size|U95<=(1/effect_size)) %>%
               select(target,category) %>%
               filter(!duplicated(.))
             ,\(X,Y)
@@ -9024,7 +9751,7 @@ adjustment_variable_d3=
   mutate(outcome_onset=floor(outcome_onset/range_span_d3$s)) %>%
   numerize_scale(range_span_d3,cand_predictors2_d3,scaler_d3) %>%
   mutate(km_outcome=Surv(outcome_onset,outcome)) %>%
-  identify_adj_vars(inter_predictor_assoc_d3) %>%
+  identify_adj_vars(inter_predictor_assoc_d3,effect_size=1) %>%
   lapply(\(x)x[-1]) %>%
   sapply(paste0,collapse='+') %>%
   data.frame(adjustment_variables=.) %>%
@@ -9036,7 +9763,7 @@ adjustment_variable_d=
   mutate(outcome_onset=floor(outcome_onset/range_span_d$s)) %>%
   numerize_scale(range_span_d,cand_predictors2_d,scaler_d) %>%
   mutate(km_outcome=Surv(outcome_onset,outcome)) %>%
-  identify_adj_vars(inter_predictor_assoc_d) %>%
+  identify_adj_vars(inter_predictor_assoc_d,effect_size=1) %>%
   lapply(\(x)x[-1]) %>%
   sapply(paste0,collapse='+') %>%
   data.frame(adjustment_variables=.) %>%
@@ -9156,6 +9883,7 @@ coxph_adj_d=
 coxph_adj_d3 %>%
   mutate(FDR=p.adjust(p.value,method='BH')) %>%
   filter(FDR<=0.05) %>%
+  filter(L95>=1|U95<=(1/1)) %>%
   select(-estimate,-std.error,-statistic) %>%
   mutate_at(
     .[,sapply(.,is.numeric)] %>%
@@ -9166,6 +9894,7 @@ coxph_adj_d3 %>%
 coxph_adj_d %>%
   mutate(FDR=p.adjust(p.value,method='BH')) %>%
   filter(FDR<=0.05) %>%
+  filter(L95>=1|U95<=(1/1)) %>%
   select(-estimate,-std.error,-statistic) %>%
   mutate_at(
     .[,sapply(.,is.numeric)] %>%
@@ -9189,7 +9918,8 @@ cand_predictors3_d=
   .[.%in%pull(
     coxph_adj_d %>%
       mutate(FDR=p.adjust(p.value,method='BH')) %>%
-      filter(FDR<=0.05)
+      filter(FDR<=0.05) %>%
+      filter(L95>=1|U95<=(1/1))
     ,predictor
   )]
 ```
@@ -9207,27 +9937,13 @@ imputed_d %>%
 ```{r Univar-KM sel. cand. predictors by multivariate analysis, include=FALSE}
 univar_surv_d3=list()
 
-univar_surv_d3$prev_HYP=
+univar_surv_d3$poor_nutr=
   imputed_d3$training %>%
   filter(outcome_onset<=range_span_d3$r) %>%
   mutate(outcome_onset=floor(outcome_onset/range_span_d3$s)) %>%
   numerize_scale(range_span_d3,cand_predictors3_d3,scaler_d3) %>%
   ggsurvplot(
-    fit=survfit(Surv(outcome_onset,outcome)~prev_HYP,data=.)
-    ,data=.
-    ,risk.table=T
-    ,pval=F
-    ,conf.int=T
-  ) %>%
-  .[1:2]
-
-univar_surv_d3$prev_ICNEO=
-  imputed_d3$training %>%
-  filter(outcome_onset<=range_span_d3$r) %>%
-  mutate(outcome_onset=floor(outcome_onset/range_span_d3$s)) %>%
-  numerize_scale(range_span_d3,cand_predictors3_d3,scaler_d3) %>%
-  ggsurvplot(
-    fit=survfit(Surv(outcome_onset,outcome)~prev_ICNEO,data=.)
+    fit=survfit(Surv(outcome_onset,outcome)~poor_nutr,data=.)
     ,data=.
     ,risk.table=T
     ,pval=F
@@ -9330,13 +10046,13 @@ univar_surv_d$immob=
     ,conf.int=T
   )
 
-univar_surv_d$BMI_GT30=
+univar_surv_d$prev_HYP=
   imputed_d$training %>%
   filter(outcome_onset<=range_span_d$r) %>%
   mutate(outcome_onset=floor(outcome_onset/range_span_d$s)) %>%
   numerize_scale(range_span_d,cand_predictors3_d,scaler_d) %>%
   ggsurvplot(
-    fit=survfit(Surv(outcome_onset,outcome)~BMI_GT30,data=.)
+    fit=survfit(Surv(outcome_onset,outcome)~prev_HYP,data=.)
     ,data=.
     ,risk.table=T
     ,pval=F
@@ -9408,19 +10124,6 @@ univar_surv_d$prev_utidiag_6mgt2_1ygt3=
     ,conf.int=T
   )
 
-univar_surv_d$prev_neuro=
-  imputed_d$training %>%
-  filter(outcome_onset<=range_span_d$r) %>%
-  mutate(outcome_onset=floor(outcome_onset/range_span_d$s)) %>%
-  numerize_scale(range_span_d,cand_predictors3_d,scaler_d) %>%
-  ggsurvplot(
-    fit=survfit(Surv(outcome_onset,outcome)~prev_neuro,data=.)
-    ,data=.
-    ,risk.table=T
-    ,pval=F
-    ,conf.int=T
-  )
-
 univar_surv_d=
   univar_surv_d %>%
   lapply(\(x)
@@ -9437,34 +10140,31 @@ univar_surv_d=
   )
 ```
 
-```{r Plot KM sel. cand. predictors, echo=FALSE, fig.height=36, fig.width=18}
+```{r Plot KM sel. cand. predictors, echo=FALSE, fig.height=30, fig.width=18}
 ggarrange(
   null_surv_d3
-  ,univar_surv_d3$prev_HYP
-  ,univar_surv_d3$prev_ICNEO
-  
+  ,univar_surv_d3$poor_nutr
   ,null_surv_d
+  
   ,univar_surv_d$AGE_GROUP
   ,univar_surv_d$ICU_STAY_10D
-  
   ,univar_surv_d$LOS_4D
+  
   ,univar_surv_d$SEX_TYPE
   ,univar_surv_d$prev_DMdiag
-  
   ,univar_surv_d$immob
-  ,univar_surv_d$BMI_GT30
-  ,univar_surv_d$prev_DMneph
   
+  ,univar_surv_d$prev_HYP
+  ,univar_surv_d$prev_DMneph
   ,univar_surv_d$prev_ICHIV
+  
   ,univar_surv_d$prev_ICNEO
   ,univar_surv_d$prev_uro
-  
   ,univar_surv_d$prev_utidiag_6mgt2_1ygt3
-  ,univar_surv_d$prev_neuro
   
   ,ncol=3
-  ,nrow=6
-  ,labels=letters[1:17]
+  ,nrow=5
+  ,labels=letters[1:15]
 )
 ```
 
@@ -9514,6 +10214,7 @@ report_predictor_selection=
       left_join(adjustment_variables,by='predictor') %>%
       left_join(
         variable_description %>%
+          select(variable,description) %>%
           rename(predictor=variable)
         ,by='predictor'
       ) %>%
@@ -9535,6 +10236,7 @@ report_predictor_selection=
               )
           ) %>%
           do.call(rbind,.) %>%
+          filter(!adjustment_variables%in%c('','-')) %>%
           mutate(
             adjustment_variables=
               adjustment_variables %>%
@@ -9543,7 +10245,8 @@ report_predictor_selection=
           spread(adjustment_variables,value,fill=0)
         ,by=c('predictor','category')
       ) %>%
-      select(-adjustment_variables)
+      select(-adjustment_variables) %>%
+      mutate_all(\(x)ifelse(is.na(x),'-',x))
   }
 ```
 
@@ -9565,199 +10268,117 @@ coxph_d %>%
   write_csv('data/predictor_selection_d.csv')
 ```
 
-```{r Lists of columns of interests and their connections, include=FALSE}
-source('R/cols_int-variable.R')
-source('R/cols_int_conn-variable.R')
-```
-
-```{r Select columns of interests, include=FALSE}
-if(all(c(1)%in%comp_req)){
-  raw_data2=
-    raw_data %>%
-    names() %>%
-    `names<-`(.,.) %>%
-    lapply(\(x){
-      y=x %>%
-        str_remove_all('^v_|_s$|_t$|_w$') %>%
-        str_to_upper()
-      
-      if(y%in%cols_int$dataset){
-        z=cols_int  %>%
-          filter(dataset%in%y) %>%
-          pull(select) %>%
-          str_split('\\|') %>%
-          .[[1]]
-        
-        raw_data[[x]] %>%
-          select_at(
-            colnames(.) %>%
-              .[.%in%z]
-          )
-      }else{
-        NULL
-      }
-    }) %>%
-    .[!sapply(.,is.null)]
-  
-  saveRDS(raw_data2,'data/raw_data2.rds')
-}else{
-  raw_data2=readRDS('data/raw_data2.rds')
-}
-```
-
-```{r Create a table to convert _NO to integer identifier}
-id_no=
-  raw_data2 %>%
-  .[sapply(.,\(x)colnames(x) %>% str_detect('_NO$') %>% any())] %>%
-  lapply(\(x)x %>% select_at(colnames(.) %>% .[str_detect(.,'_NO$')])) %>%
-  lapply(mutate_all,as.character) %>%
-  lapply(gather) %>%
-  lapply(\(x)filter(x,!duplicated(x))) %>%
-  do.call(rbind,.) %>%
-  `rownames<-`(NULL) %>%
-  filter(!duplicated(.)) %>%
-  arrange(key,value) %>%
-  group_by(key) %>%
-  mutate(id_subject=seq(n()))
-```
-
 ```{r}
-raw_data2$v_chr_basic_s
-raw_data2$v_opd_basic_s
-raw_data2$v_ipd_basic_s
-raw_data2$v_opd_med_s
-raw_data2$v_bio_inf_s
-raw_data2$v_opd_exper_s
-raw_data2$v_labresult_s
-raw_data2$v_chr_icd_s
-raw_data2$v_ud_order_s
+report_candidate_predictor_eligible_d3$initial$variable %>%
+  left_join(
+    report_candidate_predictor_eligible_d3$by_available$variable
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d3$initial$indicator %>%
+  left_join(
+    report_candidate_predictor_eligible_d3$by_available$indicator
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d3$by_available$variable %>%
+  left_join(
+    report_candidate_predictor_eligible_d3$by_pf$variable
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d3$by_available$indicator %>%
+  left_join(
+    report_candidate_predictor_eligible_d3$by_pf$indicator
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d3$by_pf$variable %>%
+  left_join(
+    report_candidate_predictor_eligible_d3$by_m$variable
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d3$by_pf$indicator %>%
+  left_join(
+    report_candidate_predictor_eligible_d3$by_m$indicator
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d3$by_m$variable %>%
+  left_join(
+    report_candidate_predictor_eligible_d3$by_om$variable
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d3$by_m$indicator %>%
+  left_join(
+    report_candidate_predictor_eligible_d3$by_om$indicator
+    ,by='variable'
+  )
+
+coxph_d3 %>%
+  report_predictor_selection(
+    coxph_adj_d3
+    ,adjustment_variable_d3
+    ,range_span_d3
+  )
+
+report_candidate_predictor_eligible_d$initial$variable %>%
+  left_join(
+    report_candidate_predictor_eligible_d$by_available$variable
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d$initial$indicator %>%
+  left_join(
+    report_candidate_predictor_eligible_d$by_available$indicator
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d$by_available$variable %>%
+  left_join(
+    report_candidate_predictor_eligible_d$by_pf$variable
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d$by_available$indicator %>%
+  left_join(
+    report_candidate_predictor_eligible_d$by_pf$indicator
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d$by_pf$variable %>%
+  left_join(
+    report_candidate_predictor_eligible_d$by_m$variable
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d$by_pf$indicator %>%
+  left_join(
+    report_candidate_predictor_eligible_d$by_m$indicator
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d$by_m$variable %>%
+  left_join(
+    report_candidate_predictor_eligible_d$by_om$variable
+    ,by='variable'
+  )
+
+report_candidate_predictor_eligible_d$by_m$indicator %>%
+  left_join(
+    report_candidate_predictor_eligible_d$by_om$indicator
+    ,by='variable'
+  )
+
+coxph_d %>%
+  report_predictor_selection(
+    coxph_adj_d
+    ,adjustment_variable_d
+    ,range_span_d
+  )
 ```
-
-```{r An empty list for outpatient and inpatient datasets, include=FALSE}
-raw_data3=list()
-```
-
-```{r Join outpatient datasets for each s/t/w, include=FALSE}
-raw_data3$OPD=list()
-
-for(x in c('_s$','_t$','_w$')){
-  cat(x)
-  y=raw_data2 %>%
-    .[str_detect(names(.),x)] %>%
-    `names<-`(str_remove_all(names(.),'^v_|_s$|_t$|_w$')) %>%
-    `names<-`(str_to_upper(names(.)))
-  
-  z=cols_int_conn[c(3:6,13:14),] %>%
-    filter(left%in%names(y) & right%in%names(y))
-  
-  for(i in rev(unique(z$level))){
-    k=z %>%
-      filter(level==i)
-    
-    for(j in seq(nrow(k))){
-      cat(k$left[j],'-',k$right[j])
-      
-      y[[k$left[j]]]=
-        y[[k$left[j]]] %>%
-          left_join(
-            y[[k$right[j]]]
-            ,by=k$by[j]
-          )
-      
-      cat('|')
-    }
-    
-    y=y %>%
-      .[!names(.)%in%k$right]
-  }
-  
-  l=z %>%
-    slice(1) %>%
-    pull(left)
-  
-  cat('\n')
-  raw_data3$OPD[[str_remove_all(x,'_|\\$')]]=
-    y[[l]]
-}
-
-rm(x,y,z,k,l,i,j)
-```
-
-```{r Join inpatient datasets for each s/t/w, include=FALSE}
-raw_data3$IPD=list()
-
-for(x in c('_s$','_t$','_w$')){
-  cat(x)
-  y=raw_data2 %>%
-    .[str_detect(names(.),x)] %>%
-    `names<-`(str_remove_all(names(.),'^v_|_s$|_t$|_w$')) %>%
-    `names<-`(str_to_upper(names(.)))
-  
-  z=cols_int_conn[c(7:12,13:14),] %>%
-    filter(left%in%names(y) & right%in%names(y))
-  
-  for(i in rev(unique(z$level))){
-    k=z %>%
-      filter(level==i)
-    
-    for(j in seq(nrow(k))){
-      cat(k$left[j],'-',k$right[j])
-      
-      Y=seq(
-          1
-          ,nrow(y[[k$left[j]]])
-          ,length=ifelse(k$right[j]!='UD_ORDER',1,200)
-        ) %>%
-        floor()
-      
-      M=list()
-      for(X in seq(length(Y))){
-        cat('.')
-        Z=c(Y[X],ifelse(X==length(Y),nrow(y[[k$left[j]]]),Y[X+1]-1))
-        
-        K=y[[k$left[j]]] %>%
-          .[Z[1]:Z[2],]
-        
-        L=y[[k$right[j]]] %>%
-          .[.[,k$by[j]]%in%K[[k$by[j]]],]
-        
-        M[[X]]=
-          K %>%
-          left_join(L,by=k$by[j])
-      }
-      
-      y[[k$left[j]]]=
-        M %>%
-        do.call(rbind,.)
-      
-      rm(X,Y,Z,K,L,M)
-      
-      cat('|')
-    }
-    
-    y=y %>%
-      .[!names(.)%in%k$right]
-  }
-  
-  l=z %>%
-    slice(1) %>%
-    pull(left)
-  
-  cat('\n')
-  raw_data3$IPD[[str_remove_all(x,'_|\\$')]]=
-    y[[l]]
-}
-
-rm(x,y,z,k,l,i,j)
-```
-
-
-
-
-
-
-
-
 
 
 
