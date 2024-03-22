@@ -3,12 +3,19 @@
 Herdiantri Sufriyana,a,b Chieh Chen,c Hua-Sheng Chiu,d Pavel Sumazin,d Po-Yu Yang,e Jiunn-Horng Kang,f,g,* Emily Chia-Yu Sua,g,h,*
 
 a Graduate Institute of Biomedical Informatics, College of Medical Science and Technology, Taipei Medical University, 250 Wu-Xing Street, Taipei 11031, Taiwan.
+
 b Department of Medical Physiology, Faculty of Medicine, Universitas Nahdlatul Ulama Surabaya, 57 Raya Jemursari Road, Surabaya 60237, Indonesia.
+
 c Department of Physical Medicine and Rehabilitation, Taipei Medical University Hospital, 252 Wu-Xing Street, Taipei 11031, Taiwan.
+
 d Texas Children's Cancer Center, Baylor College of Medicine, Houston, TX 77030, USA.
+
 e School of Medicine, College of Medicine, Taipei Medical University, 250 Wu-Xing Street, Taipei 11031, Taiwan.
+
 f Graduate Institute of Nanomedicine and Medical Engineering, Taipei Medical University, 250 Wu-Xing Street, Taipei 11031, Taiwan.
+
 g Research Center for Artificial Intelligence in Medicine, Taipei Medical University, 250 Wu-Xing Street, Taipei 11031, Taiwan.
+
 h Clinical Big Data Research Center, Taipei Medical University Hospital, 252 Wu-Xing Street, Taipei 11031, Taiwan.
 
 \* Corresponding authors at:
